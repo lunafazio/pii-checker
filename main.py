@@ -55,6 +55,9 @@ import datetime
 import time
 import pandas as pd
 from copy import copy
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from loader import load_data
 from column_filter import is_candidate_column, find_gps_candidates
 from column_checker import check_column, sanitize_for_excel
@@ -276,6 +279,18 @@ def _build_results(results, skipped_cols, skipped_files) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=_RESULTS_FIELDS)
 
 
+# Row fill (and font colour) per evaluation on the Results/Detail sheets
+_EVALUATION_STYLES = {
+    'error'              : ('C00000', 'FFFFFF'),
+    'direct_pii'         : ('FFD9D9', None),
+    'possible_indirect'  : ('FFEFC2', None),
+    'internal_id'        : ('DDF2DD', None),
+    'not_pii'            : ('DCE8F7', None),
+    'columns not checked': ('EEEEEE', None),
+    'file not checked'   : ('D4D4D4', None),
+}
+
+
 def _set_font(cell, **attrs):
     """Changes only the given font attributes, keeping the cell's font name and size."""
     font = copy(cell.font)
@@ -284,10 +299,22 @@ def _set_font(cell, **attrs):
     cell.font = font
 
 
-def _style_sheet(ws):
-    """Bold header row."""
+def _style_sheet(ws, evaluation_header):
+    """Bold header row; colour the evaluation column by its value.
+    Colours use conditional formatting rather than cell styles: styled cells lose
+    LibreOffice's automatic full-height display of multi-line values (e.g. tabulation)."""
+    header = [c.value for c in ws[1]]
     for cell in ws[1]:
         _set_font(cell, bold=True)
+    if evaluation_header not in header or ws.max_row < 2:
+        return
+    evaluation_col = get_column_letter(header.index(evaluation_header) + 1)
+    cell_range = f"{evaluation_col}2:{evaluation_col}{ws.max_row}"
+    for evaluation, (fill, font_color) in _EVALUATION_STYLES.items():
+        ws.conditional_formatting.add(cell_range, FormulaRule(
+            formula=[f'${evaluation_col}2="{evaluation}"'],
+            fill=PatternFill('solid', start_color=fill, end_color=fill, bgColor=fill),
+            font=Font(color=font_color) if font_color else None))
 
 
 def _fit_columns_before(ws, stop_header, max_width=40):
@@ -320,9 +347,9 @@ def save_results(results, issues, output_path, metadata=None, skipped_cols=(), s
         else:
             pd.DataFrame([{'message': 'No variables were evaluated'}]).to_excel(
                 writer, sheet_name='Detail', index=False)
-        _style_sheet(writer.sheets['Results'])
+        _style_sheet(writer.sheets['Results'], 'evaluation')
         _fit_columns_before(writer.sheets['Results'], 'reasoning')
-        _style_sheet(writer.sheets['Detail'])
+        _style_sheet(writer.sheets['Detail'], 'evaluation')
         _fit_columns_before(writer.sheets['Detail'], 'reasoning')
         if issues:
             pd.DataFrame(issues).to_excel(writer, sheet_name='Issues', index=False)
