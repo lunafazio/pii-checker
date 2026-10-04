@@ -284,6 +284,21 @@ def _set_font(cell, **attrs):
     cell.font = font
 
 
+def _style_sheet(ws):
+    """Bold header row."""
+    for cell in ws[1]:
+        _set_font(cell, bold=True)
+
+
+def _fit_columns_before(ws, stop_header, max_width=40):
+    """Widens every column left of stop_header to its longest entry, capped at max_width."""
+    for cells in ws.iter_cols():
+        if cells[0].value == stop_header:
+            break
+        width = max(len(str(c.value)) for c in cells if c.value is not None)
+        ws.column_dimensions[cells[0].column_letter].width = min(width, max_width) + 2
+
+
 def _format_key_column(ws):
     """Bold first column, widened to fit its longest entry."""
     width = 0
@@ -305,6 +320,10 @@ def save_results(results, issues, output_path, metadata=None, skipped_cols=(), s
         else:
             pd.DataFrame([{'message': 'No variables were evaluated'}]).to_excel(
                 writer, sheet_name='Detail', index=False)
+        _style_sheet(writer.sheets['Results'])
+        _fit_columns_before(writer.sheets['Results'], 'reasoning')
+        _style_sheet(writer.sheets['Detail'])
+        _fit_columns_before(writer.sheets['Detail'], 'reasoning')
         if issues:
             pd.DataFrame(issues).to_excel(writer, sheet_name='Issues', index=False)
         if metadata:
