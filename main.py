@@ -54,6 +54,7 @@ import tempfile
 import datetime
 import time
 import pandas as pd
+from copy import copy
 from loader import load_data
 from column_filter import is_candidate_column, find_gps_candidates
 from column_checker import check_column, sanitize_for_excel
@@ -242,10 +243,28 @@ def _build_overview(metadata) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _set_font(cell, **attrs):
+    """Changes only the given font attributes, keeping the cell's font name and size."""
+    font = copy(cell.font)
+    for key, value in attrs.items():
+        setattr(font, key, value)
+    cell.font = font
+
+
+def _format_key_column(ws):
+    """Bold first column, widened to fit its longest entry."""
+    width = 0
+    for (cell,) in ws.iter_rows(max_col=1):
+        _set_font(cell, bold=True)
+        width = max(width, len(str(cell.value or '')))
+    ws.column_dimensions['A'].width = width + 3  # bold text runs a little wider
+
+
 def save_results(results, issues, output_path, metadata=None):
     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
         if metadata:
-            _build_overview(metadata).to_excel(writer, sheet_name='Overview', index=False)
+            _build_overview(metadata).to_excel(writer, sheet_name='Overview', index=False, header=False)
+            _format_key_column(writer.sheets['Overview'])
         if results:
             pd.DataFrame(results).to_excel(writer, sheet_name='Results', index=False)
         else:
@@ -255,7 +274,8 @@ def save_results(results, issues, output_path, metadata=None):
             pd.DataFrame(issues).to_excel(writer, sheet_name='Issues', index=False)
         if metadata:
             pd.DataFrame({'key': list(metadata), 'value': list(metadata.values())}).to_excel(
-                writer, sheet_name='Metadata', index=False)
+                writer, sheet_name='Metadata', index=False, header=False)
+            _format_key_column(writer.sheets['Metadata'])
     logger.info("Results saved to %s", output_path)
 
 
